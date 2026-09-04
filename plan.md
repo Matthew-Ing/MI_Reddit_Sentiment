@@ -1,7 +1,7 @@
 ---
 
 name: Daily Sentiment App
-overview: Greenfield Spring Boot API + React UI on cheap production AWS (ECS, RDS, S3, SQS, CloudFront, EventBridge). Daily job fetches a subreddit’s top posts via the official Reddit API, LangChain4j/Bedrock scores each post, then rolls that up into a single “sentiment of the subreddit for the day.”
+overview: Greenfield Spring Boot API + React UI on cheap production AWS (ECS, RDS, S3, SQS, CloudFront, EventBridge). Daily job fetches a subreddit’s top posts from api.reddit.com, LangChain4j/Bedrock scores each post, then rolls that up into a single “sentiment of the subreddit for the day.”
 todos:
 
 - id: scaffold content: Scaffold backend (Java 21 / Spring Boot out3 Maven), frontend (Vite React TS), docker-compose (Postgres + LocalStack), API Dockerfile status: pending
@@ -9,7 +9,7 @@ todos:
 content: "JPA entities/repos: subreddits, scrape_runs, posts (sentiment cols), daily_sentiments; S3 raw JSON writer"
 status: pending
 - id: reddit-client
-content: OAuth client, Resilience4j 80 QPM limiter, header-aware 429 handling, GET /r/{sub}/top?t=day
+content: "HTTP GET https://api.reddit.com/r/{sub}/top/?t=day&limit=10, parse listing JSON, User-Agent, 429 retries"
 status: pending
 - id: scrape-pipeline
 content: SQS-triggered sequential daily orchestrator + EventBridge-compatible job messages (and UI enqueue)
@@ -27,7 +27,7 @@ status: pending
 content: "Java CDK: public-subnet Fargate, ALB, RDS, S3 (raw+spa), CloudFront, SQS, EventBridge, Secrets, Bedrock IAM (no NAT)"
 status: pending
 - id: readme
-content: "README: architecture, 100 QPM, Bedrock access, local run, Reddit app setup, cheap AWS deploy"
+content: "README: architecture, api.reddit.com listing, Bedrock access, local run, cheap AWS deploy"
 status: pending
 isProject: false
 
@@ -41,25 +41,24 @@ isProject: false
 
 ## Product
 
-Pick a subreddit → fetch **today’s top posts** (`GET /r/{sub}/top?t=day`) via the **official Reddit OAuth API** → **LangChain4j on Amazon Bedrock** classifies each post → persist a **daily subreddit sentiment** (label, weighted score, short rationale) that the React UI shows as the day’s mood.
+Pick a subreddit → fetch **today’s top posts** via the public JSON listing `GET https://api.reddit.com/r/{sub}/top/?t=day&limit=10` → **LangChain4j on Amazon Bedrock** classifies each post → persist a **daily subreddit sentiment** (label, weighted score, short rationale) that the React UI shows as the day’s mood.
 
-Workspace is still empty besides [plan.md](plan.md). Implementation will replace that file with this architecture.
+Example: `https://api.reddit.com/r/EngineeringResumes/top/?t=day&limit=10`
 
-## Constraint (Reddit rate limit)
+The official OAuth Data API is **not** used (it does not work for this project).
 
-Reddit’s free Data API is **100 queries per minute (QPM) per OAuth client**, averaged over 10 minutes — not 100 QPS. Unauthenticated traffic is blocked.
+## Constraint (Reddit listing)
 
-- Target **~80 QPM** with Resilience4j (headroom for retries).
-- Honor `X-Ratelimit-*` headers; on `429`, wait until `X-Ratelimit-Reset` then retry (bounded).
-- Daily top listing is **1 call per subreddit per run** (`limit=25`), so the limiter exists for correctness and resume talking points, not because we are near the cap.
-- Unique `User-Agent`, e.g. `ecs:reddit-sentiment:1.0 (by /u/yourname)`.
-- Bedrock calls do **not** count against Reddit QPM.
+This client hits **unauthenticated** `api.reddit.com` JSON, not `oauth.reddit.com`. There is no OAuth client, no 100 QPM Data API contract, and Reddit may throttle or change the endpoint without notice.
 
-
+- Unique `User-Agent` (browser-like or `ecs:reddit-sentiment:1.0`) and `Accept: application/json`.
+- On `429` / empty/blocked HTML, wait and retry bounded times; process subreddits **sequentially**.
+- Daily top listing is **1 call per subreddit per run** (`limit=10`).
+- Bedrock calls do **not** go through Reddit.
 
 ## Architecture
 
-One Spring Boot task on **ECS Fargate** (`desiredCount=1` so the Reddit limiter stays in-process). React is a static SPA on **S3 + CloudFront** (cheap, standard production split). EventBridge enqueues the daily job; SQS serializes work.
+One Spring Boot task on **ECS Fargate** (`desiredCount=1` so listing calls stay in-process and sequential). React is a static SPA on **S3 + CloudFront** (cheap, standard production split). EventBridge enqueues the daily job; SQS serializes work.
 
 ```mermaid
 flowchart LR
@@ -69,7 +68,7 @@ flowchart LR
   ALB --> ECS[ECS_Fargate_SpringBoot]
   EventBridge -->|daily_job| SQS
   ECS -->|poll| SQS
-  ECS -->|OAuth_top_day| Reddit[Reddit_API]
+  ECS -->|api_reddit_top| Reddit[api.reddit.com]
   ECS -->|raw_JSON| RawS3[S3_raw_archive]
   ECS -->|posts_and_daily| RDS[RDS_Postgres]
   ECS -->|LangChain4j| Bedrock[Amazon_Bedrock]
@@ -87,7 +86,7 @@ flowchart LR
 - **SQS** — serialize scrape/score jobs, retries
 - **RDS Postgres** (`db.t4g.micro`, single-AZ) — posts + daily sentiment
 - **Amazon Bedrock** (Haiku-class) — sentiment via IAM, no API key
-- **Secrets Manager** — Reddit client id/secret, DB password
+- **Secrets Manager** — DB password (no Reddit client id/secret)
 - **CloudWatch Logs** — container logs
 - **AWS CDK (Java)** — same language as the API
 
@@ -106,12 +105,10 @@ docker-compose.yml   Postgres + LocalStack (S3 + SQS)
 
 ## Reddit client
 
-- Application-only OAuth (`grant_type=client_credentials`), token cache, custom User-Agent
-- Resilience4j **80 permits/minute**
-- Default fetch: `GET /r/{subreddit}/top?t=day&limit=25` (1 Reddit call per subreddit per job)
+- No OAuth, no token cache, no Reddit app
+- Default fetch: `GET https://api.reddit.com/r/{subreddit}/top/?t=day&limit=10` (1 listing call per subreddit per job)
+- Parse `data.children[].data` (`id`, `title`, `author`, `score`, `num_comments`, `created_utc`, `permalink`, `selftext`) into `posts` + S3 raw JSON
 - No comment trees in v1
-
-
 
 ## Data model (Postgres)
 
@@ -180,12 +177,13 @@ Local: Vite proxy `/api` → Spring Boot. AWS: CloudFront for static assets; API
 - `application-local.yml` vs `application-aws.yml`
 - Dockerfile for the Fargate API image; frontend `npm run build` uploaded to the SPA bucket
 - CDK: VPC (public subnets, no NAT), ECS, ALB, RDS, two S3 buckets (raw + spa), CloudFront, SQS, EventBridge, Secrets, IAM including Bedrock invoke
-- README: Reddit app setup, 100 QPM budget, Bedrock model enablement, local run, cheap deploy notes
+- README: `api.reddit.com` listing URL, Bedrock model enablement, local run, cheap deploy notes
 
 
 
 ## Out of scope for v1
 
+- Official Reddit OAuth Data API
 - Comment-tree scraping
 - Multi-task autoscaling of the worker
 - API auth
@@ -196,7 +194,6 @@ Local: Vite proxy `/api` → Spring Boot. AWS: CloudFront for static assets; API
 
 ## Resume talking points
 
-- Event-driven pipeline on ECS Fargate (EventBridge → SQS → worker) with an explicit Reddit **100 QPM** budget
+- Event-driven pipeline on ECS Fargate (EventBridge → SQS → worker) fetching public `api.reddit.com` top-of-day listings
 - React SPA on S3/CloudFront + Spring Boot API; hot/cold storage (Postgres + S3 raw JSON)
 - LangChain4j structured sentiment on Bedrock, rolled up to **daily subreddit mood**
-

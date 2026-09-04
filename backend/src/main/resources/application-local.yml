@@ -18,3 +18,9 @@ aws:
     bucket: sentiment-raw
   sqs:
     queue-url: http://localhost:4566/000000000000/scrape-jobs
+reddit:
+  base-url: https://reddapi.p.rapidapi.com
+  host: reddapi.p.rapidapi.com
+  api-key: ${RAPIDAPI_KEY}
+  limit: 10
+  max-retries: 1
