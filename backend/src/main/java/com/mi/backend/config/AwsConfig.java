@@ -6,6 +6,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.sqs.SqsClient;
 
 import java.net.URI;
 
@@ -23,4 +24,15 @@ public class AwsConfig {
         .forcePathStyle(true)
         .build();
   }
+
+  @Bean
+SqsClient sqsClient(AwsProperties props) {
+  return SqsClient.builder()
+      .endpointOverride(URI.create(props.endpoint()))
+      .region(Region.of(props.region()))
+      .credentialsProvider(
+          StaticCredentialsProvider.create(
+              AwsBasicCredentials.create("test", "test")))
+      .build();
+}
 }

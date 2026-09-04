@@ -6,7 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AwsProperties(
     String endpoint,
     String region,
-    S3 s3
+    S3 s3,
+    Sqs sqs
 ) {
   public record S3(String bucket) {}
+  public record Sqs(String queueUrl) {}
 }

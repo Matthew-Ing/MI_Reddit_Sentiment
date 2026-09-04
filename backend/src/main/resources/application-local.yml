@@ -24,3 +24,6 @@ reddit:
   api-key: ${RAPIDAPI_KEY}
   limit: 10
   max-retries: 1
+app:
+  cors:
+    origins: http://localhost:5173
