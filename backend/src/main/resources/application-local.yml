@@ -1,0 +1,20 @@
+server:
+  port: 8081
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sentiment
+    username: sentiment
+    password: sentiment
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+sentiment:
+  stub: true
+aws:
+  endpoint: http://localhost:4566
+  region: us-east-1
+  s3:
+    bucket: sentiment-raw
+  sqs:
+    queue-url: http://localhost:4566/000000000000/scrape-jobs

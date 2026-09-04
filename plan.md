@@ -1,38 +1,43 @@
 ---
+
 name: Daily Sentiment App
 overview: Greenfield Spring Boot API + React UI on cheap production AWS (ECS, RDS, S3, SQS, CloudFront, EventBridge). Daily job fetches a subreddit’s top posts via the official Reddit API, LangChain4j/Bedrock scores each post, then rolls that up into a single “sentiment of the subreddit for the day.”
 todos:
-  - id: scaffold
-    content: Scaffold backend (Java 21 / Spring Boot 3 Maven), frontend (Vite React TS), docker-compose (Postgres + LocalStack), API Dockerfile
-    status: pending
-  - id: domain-storage
-    content: "JPA entities/repos: subreddits, scrape_runs, posts (sentiment cols), daily_sentiments; S3 raw JSON writer"
-    status: pending
-  - id: reddit-client
-    content: OAuth client, Resilience4j 80 QPM limiter, header-aware 429 handling, GET /r/{sub}/top?t=day
-    status: pending
-  - id: scrape-pipeline
-    content: SQS-triggered sequential daily orchestrator + EventBridge-compatible job messages (and UI enqueue)
-    status: pending
-  - id: sentiment
-    content: LangChain4j + Bedrock per-post scoring; weighted daily rollup + optional day summary; stub mode for local
-    status: pending
-  - id: rest-api
-    content: "REST + CORS: subreddits, scrapes, posts-by-day, daily sentiment history, health"
-    status: pending
-  - id: react-ui
-    content: Dashboard, top-posts, history pages; Vite proxy locally; VITE_API_BASE_URL for AWS
-    status: pending
-  - id: cdk-ecs
-    content: "Java CDK: public-subnet Fargate, ALB, RDS, S3 (raw+spa), CloudFront, SQS, EventBridge, Secrets, Bedrock IAM (no NAT)"
-    status: pending
-  - id: readme
-    content: "README: architecture, 100 QPM, Bedrock access, local run, Reddit app setup, cheap AWS deploy"
-    status: pending
+
+- id: scaffold content: Scaffold backend (Java 21 / Spring Boot out3 Maven), frontend (Vite React TS), docker-compose (Postgres + LocalStack), API Dockerfile status: pending
+- id: domain-storage
+content: "JPA entities/repos: subreddits, scrape_runs, posts (sentiment cols), daily_sentiments; S3 raw JSON writer"
+status: pending
+- id: reddit-client
+content: OAuth client, Resilience4j 80 QPM limiter, header-aware 429 handling, GET /r/{sub}/top?t=day
+status: pending
+- id: scrape-pipeline
+content: SQS-triggered sequential daily orchestrator + EventBridge-compatible job messages (and UI enqueue)
+status: pending
+- id: sentiment
+content: LangChain4j + Bedrock per-post scoring; weighted daily rollup + optional day summary; stub mode for local
+status: pending
+- id: rest-api
+content: "REST + CORS: subreddits, scrapes, posts-by-day, daily sentiment history, health"
+status: pending
+- id: react-ui
+content: Dashboard, top-posts, history pages; Vite proxy locally; VITE_API_BASE_URL for AWS
+status: pending
+- id: cdk-ecs
+content: "Java CDK: public-subnet Fargate, ALB, RDS, S3 (raw+spa), CloudFront, SQS, EventBridge, Secrets, Bedrock IAM (no NAT)"
+status: pending
+- id: readme
+content: "README: architecture, 100 QPM, Bedrock access, local run, Reddit app setup, cheap AWS deploy"
+status: pending
 isProject: false
+
 ---
 
+
+
 # Daily Subreddit Sentiment (Spring Boot + React + AWS)
+
+
 
 ## Product
 
@@ -49,6 +54,8 @@ Reddit’s free Data API is **100 queries per minute (QPM) per OAuth client**, a
 - Daily top listing is **1 call per subreddit per run** (`limit=25`), so the limiter exists for correctness and resume talking points, not because we are near the cap.
 - Unique `User-Agent`, e.g. `ecs:reddit-sentiment:1.0 (by /u/yourname)`.
 - Bedrock calls do **not** count against Reddit QPM.
+
+
 
 ## Architecture
 
@@ -68,6 +75,8 @@ flowchart LR
   ECS -->|LangChain4j| Bedrock[Amazon_Bedrock]
   ECS -->|creds| SM[Secrets_Manager]
 ```
+
+
 
 **AWS services (cheap production set):**
 
@@ -102,6 +111,8 @@ docker-compose.yml   Postgres + LocalStack (S3 + SQS)
 - Default fetch: `GET /r/{subreddit}/top?t=day&limit=25` (1 Reddit call per subreddit per job)
 - No comment trees in v1
 
+
+
 ## Data model (Postgres)
 
 - `subreddits` — name, enabled, last scraped
@@ -119,6 +130,8 @@ S3 archive: `raw/subreddit={name}/dt={yyyy-MM-dd}/post={id}.json`
 - Worker loads **enabled** subreddits and processes them **sequentially**
 - UI “Analyze today” enqueues the same SQS message (do not bypass the queue)
 - SQS visibility timeout covers scrape + bounded sentiment batch; failures retry
+
+
 
 ## LangChain4j sentiment
 
@@ -169,6 +182,8 @@ Local: Vite proxy `/api` → Spring Boot. AWS: CloudFront for static assets; API
 - CDK: VPC (public subnets, no NAT), ECS, ALB, RDS, two S3 buckets (raw + spa), CloudFront, SQS, EventBridge, Secrets, IAM including Bedrock invoke
 - README: Reddit app setup, 100 QPM budget, Bedrock model enablement, local run, cheap deploy notes
 
+
+
 ## Out of scope for v1
 
 - Comment-tree scraping
@@ -177,8 +192,11 @@ Local: Vite proxy `/api` → Spring Boot. AWS: CloudFront for static assets; API
 - Terraform / OpenAI / Python LangChain
 - NAT Gateway (unless you later want private subnets)
 
+
+
 ## Resume talking points
 
 - Event-driven pipeline on ECS Fargate (EventBridge → SQS → worker) with an explicit Reddit **100 QPM** budget
 - React SPA on S3/CloudFront + Spring Boot API; hot/cold storage (Postgres + S3 raw JSON)
 - LangChain4j structured sentiment on Bedrock, rolled up to **daily subreddit mood**
+
